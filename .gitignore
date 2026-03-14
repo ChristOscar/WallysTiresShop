@@ -1,0 +1,8 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+server/db/tires.db
+.env
+client/.env
+dist/
+.DS_Store
