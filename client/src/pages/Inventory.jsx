@@ -29,16 +29,14 @@ export default function Inventory() {
       const data = await res.json();
       setTires(data);
       setError('');
-    } catch (err) {
+    } catch {
       setError('Could not load inventory. Is the server running?');
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    fetchTires();
-  }, []);
+  useEffect(() => { fetchTires(); }, []);
 
   const filtered = useMemo(() => {
     return tires.filter(t => {
@@ -49,13 +47,23 @@ export default function Inventory() {
       if (filters.search) {
         const q = filters.search.toLowerCase();
         const size = `${t.width}/${t.aspect_ratio}r${t.rim_size}`;
-        if (!t.brand.toLowerCase().includes(q) && !size.includes(q.replace('r','').replace('/',''))) {
+        if (!t.brand.toLowerCase().includes(q) && !size.includes(q.replace('r', '').replace('/', ''))) {
           return false;
         }
       }
       return true;
     });
   }, [tires, filters]);
+
+  // Stats derived from full tire list
+  const stats = useMemo(() => {
+    const inStock = tires.filter(t => t.quantity > 0);
+    const outOfStock = tires.filter(t => t.quantity === 0);
+    const lowStock = tires.filter(t => t.quantity > 0 && t.quantity <= 2);
+    const totalUnits = tires.reduce((sum, t) => sum + t.quantity, 0);
+    const estValue = tires.reduce((sum, t) => sum + (t.price || 0) * t.quantity, 0);
+    return { total: tires.length, inStock: inStock.length, outOfStock: outOfStock.length, lowStock: lowStock.length, totalUnits, estValue };
+  }, [tires]);
 
   async function handleAdd(tireData) {
     const res = await fetch(`${API}/api/tires`, {
@@ -101,57 +109,153 @@ export default function Inventory() {
     navigate('/login', { replace: true });
   }
 
+  const hasActiveFilters =
+    filters.search || filters.brand !== 'All' ||
+    filters.width !== 'All' || filters.rimSize !== 'All' || filters.inStockOnly;
+
   return (
     <div className="inv-page">
-      {/* Top Bar */}
+
+      {/* ── TOP BAR ── */}
       <div className="inv-topbar">
         <div className="inv-brand">
           <span className="inv-brand-name">🛞 Wally's Tires</span>
-          <span className="inv-brand-sub">Inventory</span>
+          <span className="inv-brand-sub">Inventory Dashboard</span>
         </div>
+
+        {/* Desktop stat pills in topbar */}
+        {!loading && (
+          <div className="inv-topbar-stats">
+            <div className="topbar-stat">
+              <span className="topbar-stat-num">{stats.total}</span>
+              <span className="topbar-stat-label">SKUs</span>
+            </div>
+            <div className="topbar-stat">
+              <span className="topbar-stat-num" style={{ color: 'var(--green)' }}>{stats.totalUnits}</span>
+              <span className="topbar-stat-label">Units</span>
+            </div>
+            <div className="topbar-stat">
+              <span className="topbar-stat-num" style={{ color: stats.outOfStock > 0 ? 'var(--red)' : 'var(--green)' }}>
+                {stats.outOfStock}
+              </span>
+              <span className="topbar-stat-label">Out of Stock</span>
+            </div>
+            <div className="topbar-stat">
+              <span className="topbar-stat-num">${stats.estValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+              <span className="topbar-stat-label">Est. Value</span>
+            </div>
+          </div>
+        )}
+
         <div className="inv-topbar-actions">
           <button className="btn-add" onClick={() => setShowModal(true)}>+ Add Tire</button>
           <button className="btn-logout" onClick={handleLogout}>Logout</button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <FilterBar filters={filters} onChange={setFilters} count={filtered.length} />
+      {/* ── BODY: sidebar + main ── */}
+      <div className="inv-body">
 
-      {/* Tire List */}
-      <div className="tire-list">
-        {loading && (
-          <div className="loading-state">Loading inventory...</div>
-        )}
+        {/* Sidebar (desktop/iPad) — collapses to top bar on mobile */}
+        <aside className="inv-sidebar">
+          <FilterBar filters={filters} onChange={setFilters} count={filtered.length} vertical />
 
-        {!loading && error && (
-          <div className="error-state">
-            <strong>Error:</strong> {error}
-            <br />
-            <button className="btn btn-small btn-primary" style={{ marginTop: 12 }} onClick={fetchTires}>
-              Retry
-            </button>
+          {/* Sidebar stats block */}
+          {!loading && (
+            <div className="sidebar-stats">
+              <div className="sidebar-stats-title">Inventory Overview</div>
+              <div className="sidebar-stat-row">
+                <span>Total SKUs</span>
+                <strong>{stats.total}</strong>
+              </div>
+              <div className="sidebar-stat-row">
+                <span>Total Units</span>
+                <strong>{stats.totalUnits}</strong>
+              </div>
+              <div className="sidebar-stat-row">
+                <span>In Stock</span>
+                <strong style={{ color: 'var(--green)' }}>{stats.inStock}</strong>
+              </div>
+              <div className="sidebar-stat-row">
+                <span>Low Stock (≤2)</span>
+                <strong style={{ color: 'var(--yellow)' }}>{stats.lowStock}</strong>
+              </div>
+              <div className="sidebar-stat-row">
+                <span>Out of Stock</span>
+                <strong style={{ color: stats.outOfStock > 0 ? 'var(--red)' : 'var(--gray-mid)' }}>{stats.outOfStock}</strong>
+              </div>
+              <div className="sidebar-stat-divider" />
+              <div className="sidebar-stat-row">
+                <span>Est. Inventory Value</span>
+                <strong>${stats.estValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* Main content */}
+        <main className="inv-main">
+
+          {/* Mobile filter bar — only visible on small screens */}
+          <div className="inv-mobile-filters">
+            <FilterBar filters={filters} onChange={setFilters} count={filtered.length} />
           </div>
-        )}
 
-        {!loading && !error && filtered.length === 0 && (
-          <div className="tire-empty">
-            <p>🔍</p>
-            <span>No tires match your filters.</span>
-          </div>
-        )}
+          {/* Results header */}
+          {!loading && !error && (
+            <div className="inv-results-header">
+              <span className="inv-results-count">
+                {filtered.length === tires.length
+                  ? `${tires.length} tires`
+                  : `${filtered.length} of ${tires.length} tires`}
+              </span>
+              {hasActiveFilters && (
+                <button
+                  className="inv-clear-filters"
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                >
+                  Clear filters ✕
+                </button>
+              )}
+            </div>
+          )}
 
-        {!loading && !error && filtered.map(tire => (
-          <TireCard
-            key={tire.id}
-            tire={tire}
-            onStock={handleStock}
-            onDelete={handleDelete}
-          />
-        ))}
+          {/* States */}
+          {loading && <div className="loading-state">Loading inventory...</div>}
+
+          {!loading && error && (
+            <div className="error-state">
+              <strong>Error:</strong> {error}
+              <br />
+              <button className="btn btn-small btn-primary" style={{ marginTop: 12 }} onClick={fetchTires}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!loading && !error && filtered.length === 0 && (
+            <div className="tire-empty">
+              <p>🔍</p>
+              <span>No tires match your filters.</span>
+            </div>
+          )}
+
+          {/* Tire grid */}
+          {!loading && !error && filtered.length > 0 && (
+            <div className="tire-grid">
+              {filtered.map(tire => (
+                <TireCard
+                  key={tire.id}
+                  tire={tire}
+                  onStock={handleStock}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+        </main>
       </div>
 
-      {/* Add Tire Modal */}
       {showModal && (
         <AddTireModal
           onClose={() => setShowModal(false)}
